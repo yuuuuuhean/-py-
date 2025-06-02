@@ -1,0 +1,364 @@
+import pygame
+import sys
+import random
+from pygame.locals import *
+
+pygame.init()
+
+SCREEN_SIZE = (1200, 800)
+screen = pygame.display.set_mode(SCREEN_SIZE)
+pygame.display.set_caption("国际贸易战略家")
+clock = pygame.time.Clock()
+
+COLORS = {
+    "background": [(249, 237, 232), (231, 230, 224), (226, 229, 239)],
+    "text": (69, 69, 69),
+    "button": (190, 184, 174),
+    "button_hover": (158, 168, 162),
+    "chart_line": (137, 155, 162),
+    "panel": (214, 209, 198),
+    "positive": (143, 161, 146),
+    "negative": (193, 143, 136),
+    "accent": (180, 155, 155)
+}
+
+
+def get_font(size):
+    font_names = [
+        "SimHei", "Microsoft YaHei",
+        "Hiragino Sans GB", "WenQuanYi Micro Hei", "Arial"
+    ]
+    return pygame.font.SysFont(font_names, size)
+
+
+fonts = {
+    "title": get_font(60),
+    "header": get_font(36),
+    "body": get_font(28),
+    "small": get_font(24)
+}
+
+
+class Button:
+    def __init__(self, text, rect, callback):
+        self.text = text
+        self.rect = pygame.Rect(rect)
+        self.callback = callback
+        self.hover = False
+
+    def draw(self, surface):
+        color = COLORS["button_hover"] if self.hover else COLORS["button"]
+        pygame.draw.rect(surface, color, self.rect, border_radius=8)
+        text_surf = fonts["body"].render(self.text, True, COLORS["text"])
+        text_rect = text_surf.get_rect(center=self.rect.center)
+        surface.blit(text_surf, text_rect)
+
+    def handle_event(self, event):
+        if event.type == MOUSEMOTION:
+            self.hover = self.rect.collidepoint(event.pos)
+        elif event.type == MOUSEBUTTONDOWN and self.hover:
+            return self.callback()
+        return None
+
+
+class EconomySystem:
+    def __init__(self):
+        self.countries = ["美国", "欧盟", "东盟", "非洲联盟"]
+        self.turn = 0
+        self.max_turns = 5
+        self.relationships = {c: 50 for c in self.countries}
+        self.tariffs = {c: 10.0 for c in self.countries}
+        self.agreements = {c: False for c in self.countries}
+        self.gdp = 10000.0
+        self.unemployment = 5.0
+        self.trade_balance = 0.0
+        self.gdp_history = [10000.0]
+        self.unemployment_history = [5.0]
+        self.last_actions = []
+
+    def update_tariff(self, country, amount):
+        self.tariffs[country] = max(0, self.tariffs[country] + amount)
+        self.relationships[country] += (-2 if amount > 0 else 1)
+        self.last_actions.append(f"{country}关税{'增加' if amount > 0 else '减少'} {abs(amount)}%")
+
+    def calculate_score(self):
+        gdp_change = (self.gdp_history[-1] - self.gdp_history[0]) / self.gdp_history[0]
+        unemployment_change = self.unemployment_history[0] - self.unemployment_history[-1]
+        agreements = sum(self.agreements.values())
+        return int(100 + gdp_change * 500 + unemployment_change * 10 + agreements * 20)
+
+
+class GameMain:
+    def __init__(self):
+        self.economy = EconomySystem()
+        self.current_page = "start_menu"
+        self.buttons = []
+        self.generate_start_menu()
+        self.generate_deco_elements()
+        self.player_title = "国际贸易战略家"  # 修改主标题
+
+    def generate_deco_elements(self):
+        self.deco_elements = []
+        shapes = ["circle", "rect", "ellipse", "line"]
+        for _ in range(15):
+            element = {
+                "pos": (random.randint(-50, SCREEN_SIZE[0] + 50), random.randint(-50, SCREEN_SIZE[1] + 50)),
+                "size": random.randint(10, 40),
+                "color": (*random.choice([
+                    (190, 184, 174), (143, 161, 146), (158, 168, 162), (214, 209, 198)
+                ]), random.randint(30, 80)),
+                "shape": random.choice(shapes),
+                "speed": (random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5))
+            }
+            self.deco_elements.append(element)
+
+    def draw_deco_elements(self):
+        for element in self.deco_elements:
+            element["pos"] = (
+                element["pos"][0] + element["speed"][0],
+                element["pos"][1] + element["speed"][1]
+            )
+            rect = (element["pos"][0], element["pos"][1], element["size"], element["size"])
+            if element["shape"] == "circle":
+                pygame.draw.circle(screen, element["color"], element["pos"], element["size"])
+            elif element["shape"] == "rect":
+                pygame.draw.rect(screen, element["color"], rect, border_radius=4)
+            elif element["shape"] == "ellipse":
+                pygame.draw.ellipse(screen, element["color"], rect)
+            else:
+                pygame.draw.line(screen, element["color"], element["pos"],
+                                 (element["pos"][0] + element["size"], element["pos"][1] + element["size"]), 3)
+
+    def generate_start_menu(self):
+        self.start_buttons = [
+            Button("开始履职", (500, 400, 200, 60), lambda: self.set_page("main")),
+            Button("全球经济指南", (500, 500, 200, 60), lambda: self.set_page("intro")),
+            Button("退出游戏", (500, 600, 200, 60), self.quit_game)
+        ]
+
+    def set_page(self, page):
+        self.current_page = page
+        self.buttons = []
+        if page == "main":
+            self.economy = EconomySystem()
+            self.buttons = [
+                Button("关税调整", (50, 600, 120, 40), self.show_tariff_menu),
+                Button("贸易谈判", (50, 660, 120, 40), self.show_negotiate_menu),
+                Button("下一回合", (1000, 660, 160, 50), self.next_turn),
+                Button("返回", (1000, 600, 160, 50), lambda: self.set_page("start_menu"))
+            ]
+        elif page == "intro":
+            self.buttons = [Button("返回", (1000, 700, 160, 50), lambda: self.set_page("start_menu"))]
+        elif page == "tariff_adjust":
+            self.buttons = [Button("返回", (50, 50, 100, 40), lambda: self.set_page("main"))] + [
+                Button(f"{c}关税+5%", (200 + i * 250, 200, 200, 40), lambda c=c: self.adjust_tariff(c, 5))
+                for i, c in enumerate(self.economy.countries)
+            ] + [
+                               Button(f"{c}关税-5%", (200 + i * 250, 260, 200, 40),
+                                      lambda c=c: self.adjust_tariff(c, -5))
+                               for i, c in enumerate(self.economy.countries)
+                           ]
+        elif page == "negotiate_menu":
+            self.buttons = [Button("返回", (50, 50, 100, 40), lambda: self.set_page("main"))] + [
+                Button(f"与{c}协商", (200 + i * 250, 200, 200, 40), lambda c=c: self.negotiate(c))
+                for i, c in enumerate(self.economy.countries)
+            ]
+
+    def adjust_tariff(self, country, amount):
+        self.economy.update_tariff(country, amount)
+        self.set_page("main")
+
+    def negotiate(self, country):
+        if self.economy.relationships[country] >= 60 and not self.economy.agreements[country]:
+            self.economy.agreements[country] = True
+            self.economy.relationships[country] += 10
+        elif self.economy.agreements[country]:
+            self.economy.agreements[country] = False
+            self.economy.relationships[country] -= 15
+        self.set_page("main")
+
+    def show_tariff_menu(self):
+        self.set_page("tariff_adjust")
+
+    def show_negotiate_menu(self):
+        self.set_page("negotiate_menu")
+
+    def draw_start_menu(self):
+        screen.fill(COLORS["background"][0])
+        self.draw_deco_elements()
+        title_surf = fonts["title"].render(self.player_title, True, COLORS["accent"])
+        screen.blit(title_surf, (SCREEN_SIZE[0] // 2 - title_surf.get_width() // 2, 150))
+        for btn in self.start_buttons:
+            btn.draw(screen)
+
+    def draw_intro(self):
+        screen.fill(COLORS["background"][1])
+        self.draw_deco_elements()
+        title = fonts["header"].render("全球经济指南", True, COLORS["accent"])
+        screen.blit(title, (SCREEN_SIZE[0] // 2 - title.get_width() // 2, 50))
+        content_rect = pygame.Rect(100, 150, 1000, 600)
+        pygame.draw.rect(screen, COLORS["panel"], content_rect, border_radius=8)
+        texts = [
+            "游戏规则说明：",
+            "1. 您将担任国家经济部长，进行5个回合的决策",
+            "2. 通过调整关税和贸易谈判来发展经济",
+            "3. 平衡GDP增长、失业率和国际关系",
+            "4. 每个回合结束后会自动推进经济指标",
+            "5. 最终根据综合表现获得评价等级"
+        ]
+        y = 180
+        for text in texts:
+            surf = fonts["body"].render(text, True, COLORS["text"])
+            screen.blit(surf, (150, y))
+            y += 50
+        for btn in self.buttons:
+            btn.draw(screen)
+
+    def draw_economic_chart(self, position, title):
+        chart_rect = pygame.Rect(position[0], position[1], 350, 250)
+        pygame.draw.rect(screen, COLORS["panel"], chart_rect, border_radius=8)
+
+        # 添加图表标题
+        title_surf = fonts["small"].render(title, True, COLORS["text"])
+        screen.blit(title_surf, (position[0] + 10, position[1] + 5))
+
+        data = self.economy.gdp_history if "GDP" in title else self.economy.unemployment_history
+        if len(data) > 1:
+            points = []
+            max_val = max(data)
+            min_val = min(data)
+            range_val = max_val - min_val if max_val != min_val else 1
+            for i, val in enumerate(data):
+                x = position[0] + 20 + i * (310 / (len(data) - 1))
+                y = position[1] + 220 - ((val - min_val) / range_val) * 200
+                points.append((x, y))
+            pygame.draw.lines(screen, COLORS["chart_line"], False, points, 3)
+
+    def draw_main(self):
+        bg_index = self.economy.turn % len(COLORS["background"])
+        screen.fill(COLORS["background"][bg_index])
+        self.draw_deco_elements()
+
+        # 侧边国家面板
+        for idx, country in enumerate(self.economy.countries):
+            panel_rect = (50, 100 + idx * 150, 300, 120)
+            pygame.draw.rect(screen, COLORS["panel"], panel_rect, border_radius=8)
+            texts = [
+                f"{country}：",
+                f"关系：{self.economy.relationships[country]}",
+                f"关税：{self.economy.tariffs[country]:.1f}%",
+                "已签协议" if self.economy.agreements[country] else "未签协议"
+            ]
+            for i, text in enumerate(texts):
+                screen.blit(fonts["small"].render(text, True, COLORS["text"]), (70, 115 + idx * 150 + i * 25))
+
+        # 经济图表
+        self.draw_economic_chart((800, 100), "GDP趋势")
+        self.draw_economic_chart((800, 400), "失业率趋势")
+
+        # 信息面板
+        info_rect = pygame.Rect(400, 100, 350, 250)
+        pygame.draw.rect(screen, COLORS["panel"], info_rect, border_radius=8)
+        info_texts = [
+            f"第 {self.economy.turn + 1} 任期",
+            f"GDP：{self.economy.gdp:,.1f}亿",
+            f"失业率：{self.economy.unemployment:.1f}%",
+            f"贸易差额：{self.economy.trade_balance:+.1f}亿"
+        ]
+        for i, text in enumerate(info_texts):
+            screen.blit(fonts["body"].render(text, True, COLORS["text"]), (420, 120 + i * 50))
+
+        # 操作按钮
+        for btn in self.buttons:
+            btn.draw(screen)
+
+    def next_turn(self):
+        if self.economy.turn >= self.economy.max_turns:
+            self.set_page("result")
+            return
+        self.economy.turn += 1
+        self.economy.gdp *= 1 + random.uniform(-0.03, 0.06)
+        self.economy.unemployment += random.uniform(-0.5, 0.7)
+        self.economy.trade_balance = random.uniform(-200, 500)
+        self.economy.gdp_history.append(self.economy.gdp)
+        self.economy.unemployment_history.append(self.economy.unemployment)
+        if self.economy.turn == self.economy.max_turns:
+            self.set_page("result")
+
+    def draw_result(self):
+        screen.fill(COLORS["background"][2])
+        score = self.economy.calculate_score()
+        title = fonts["title"].render(f"任期结束 - 综合评分：{score}", True, COLORS["accent"])
+        screen.blit(title, (SCREEN_SIZE[0] // 2 - title.get_width() // 2, 50))
+        pygame.draw.rect(screen, COLORS["panel"], (200, 150, 800, 500), border_radius=8)
+        feedbacks = [
+            f"最终GDP：{self.economy.gdp:,.1f}亿（初期：{self.economy.gdp_history[0]:,.1f}亿）",
+            f"失业率变化：{self.economy.unemployment_history[0]:.1f}% → {self.economy.unemployment:.1f}%",
+            f"签署协定：{sum(self.economy.agreements.values())}个",
+            "",
+            "施政评价：" + self.get_feedback_text(score)
+        ]
+        y = 180
+        for text in feedbacks:
+            surf = fonts["body"].render(text, True, COLORS["text"])
+            screen.blit(surf, (250, y))
+            y += 50 if text else 20
+        Button("重新开始", (500, 700, 200, 60), lambda: self.set_page("start_menu")).draw(screen)
+
+    def get_feedback_text(self, score):
+        if score >= 90:
+            return "卓越领导！全球典范！"
+        elif score >= 70:
+            return "成效显著！继续努力！"
+        elif score >= 50:
+            return "平稳发展！仍有提升空间！"
+        else:
+            return "需加强经济管理能力！"
+
+    def run(self):
+        while True:
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    self.quit_game()
+                elif event.type == KEYDOWN and event.key == K_ESCAPE:
+                    if self.current_page in ["main", "intro"]:
+                        self.set_page("start_menu")
+                current_buttons = []
+                if self.current_page == "start_menu":
+                    current_buttons = self.start_buttons
+                elif self.current_page in ["main", "intro", "result", "tariff_adjust", "negotiate_menu"]:
+                    current_buttons = self.buttons
+                for btn in current_buttons:
+                    result = btn.handle_event(event)
+                    if result is not None:
+                        break
+
+            if self.current_page == "start_menu":
+                self.draw_start_menu()
+            elif self.current_page == "main":
+                self.draw_main()
+            elif self.current_page == "intro":
+                self.draw_intro()
+            elif self.current_page == "result":
+                self.draw_result()
+            elif self.current_page == "tariff_adjust":
+                screen.fill(COLORS["background"][1])
+                self.draw_deco_elements()
+                for btn in self.buttons:
+                    btn.draw(screen)
+            elif self.current_page == "negotiate_menu":
+                screen.fill(COLORS["background"][1])
+                self.draw_deco_elements()
+                for btn in self.buttons:
+                    btn.draw(screen)
+
+            pygame.display.flip()
+            clock.tick(30)
+
+    def quit_game(self):
+        pygame.quit()
+        sys.exit()
+
+
+if __name__ == "__main__":
+    GameMain().run()
